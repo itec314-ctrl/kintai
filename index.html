@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>勤怠打刻</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: #f4f6f8; color: #222; padding: 16px;
+    }
+    .card {
+      background: #fff; border-radius: 14px; padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); max-width: 480px; margin: 0 auto 14px;
+    }
+    h1 { font-size: 18px; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #777; margin-bottom: 12px; }
+    .bigbtn {
+      display: block; width: 100%; padding: 18px; border: none; border-radius: 12px;
+      font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 12px; cursor: pointer;
+    }
+    .bigbtn:disabled { opacity: .45; }
+    .green { background: #00b04f; }
+    .red { background: #e5504f; }
+    .blue { background: #3577e5; }
+    .gray { background: #78828c; }
+    .status { font-size: 14px; padding: 10px 12px; border-radius: 8px; background: #eef3f8; margin-bottom: 12px; line-height: 1.6; }
+    .ok { background: #e6f7ec; color: #0a7d3b; }
+    .err { background: #fdecec; color: #b3312f; }
+    .hidden { display: none; }
+    label { font-size: 13px; color: #555; display: block; margin: 10px 0 4px; }
+    input[type=date], input[type=text] {
+      width: 100%; padding: 12px; border: 1px solid #ccd4dc; border-radius: 8px; font-size: 16px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 6px 4px; border-bottom: 1px solid #eee; text-align: center; }
+    th { background: #f0f4f8; color: #555; font-weight: normal; }
+    tr.sat td { background: #f2f7ff; }
+    tr.sun td { background: #fff4f4; }
+    tr.leave td { background: #fff8e0; }
+    .summary { display: flex; gap: 8px; margin-bottom: 12px; }
+    .summary div { flex: 1; background: #f0f4f8; border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; color: #666; }
+    .summary b { display: block; font-size: 17px; color: #222; }
+    .monthnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .monthnav button { background: #eef3f8; border: none; border-radius: 8px; padding: 8px 14px; font-size: 15px; cursor: pointer; }
+    .monthnav span { font-weight: bold; }
+    .spinner { text-align: center; color: #888; padding: 20px; font-size: 14px; }
+    .bigicon { text-align: center; font-size: 44px; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <!-- 読み込み中 -->
+  <div id="viewLoading" class="card">
+    <div class="spinner" id="loadingText">読み込み中...</div>
+  </div>
+
+  <!-- エラー -->
+  <div id="viewError" class="card hidden">
+    <h1>エラー</h1>
+    <div class="status err" id="errorText"></div>
+    <div class="sub">LINE WORKSアプリのトーク画面のボタンから開いてください。解決しない場合は管理者に連絡してください。</div>
+  </div>
+
+  <!-- ホーム(モード指定なしのとき) -->
+  <div id="viewHome" class="card hidden">
+    <h1>勤怠メニュー</h1>
+    <div class="sub" id="homeUser"></div>
+    <button class="bigbtn green" onclick="showPunch('in')">🟢 出勤</button>
+    <button class="bigbtn red" onclick="showPunch('out')">🔴 退勤</button>
+    <button class="bigbtn blue" onclick="showLeave()">🏖 有休申請</button>
+    <button class="bigbtn gray" onclick="showReport()">📋 出勤簿を見る</button>
+  </div>
+
+  <!-- 打刻 (自動実行) -->
+  <div id="viewPunch" class="card hidden">
+    <h1 id="punchTitle">出勤打刻</h1>
+    <div class="sub" id="punchUser"></div>
+    <div class="bigicon" id="punchIcon">📍</div>
+    <div class="status" id="gpsStatus">位置情報を取得しています...</div>
+    <button id="punchRetryBtn" class="bigbtn green hidden" onclick="startPunch()">再試行</button>
+    <button id="punchNoLocBtn" class="bigbtn gray hidden" onclick="submitPunch(null)">位置情報なしで打刻する</button>
+  </div>
+
+  <!-- 有休申請 -->
+  <div id="viewLeave" class="card hidden">
+    <h1>🏖 有休申請</h1>
+    <div class="sub" id="leaveUser"></div>
+    <label>取得したい日</label>
+    <input type="date" id="leaveDate">
+    <label>メモ (任意)</label>
+    <input type="text" id="leaveNote" placeholder="例: 私用のため">
+    <div style="height:14px"></div>
+    <button class="bigbtn blue" id="leaveBtn" onclick="doLeave()">この日で申請する</button>
+    <div class="status ok hidden" id="leaveResult"></div>
+  </div>
+
+  <!-- 出勤簿 -->
+  <div id="viewReport" class="card hidden">
+    <h1>📋 出勤簿</h1>
+    <div class="sub" id="reportUser"></div>
+    <div class="monthnav">
+      <button onclick="moveMonth(-1)">◀ 前月</button>
+      <span id="reportMonth"></span>
+      <button onclick="moveMonth(1)">翌月 ▶</button>
+    </div>
+    <div class="summary">
+      <div>出勤日数<b id="sumWork">-</b></div>
+      <div>有休<b id="sumLeave">-</b></div>
+      <div>総勤務時間<b id="sumHours">-</b></div>
+    </div>
+    <div id="reportBody"><div class="spinner">読み込み中...</div></div>
+  </div>
+
+  <script src="https://static.worksmobile.net/static/wm/woff/edge/3.7.1/sdk.js" charset="utf-8"></script>
+  <script>
+    // ====== 設定 ======
+    var WOFF_ID = 'bujTAWTOk6q6kDjT-ulrkQ';
+    var GAS_URL = 'https://script.google.com/macros/s/AKfycbxitHi6mVH5Eehe1Hf5esNFKBeMAR4ByQG70A5dHHty0btLLs7P2uiHYaoyxWL_NNWx/exec';
+    // ==================
+
+    var MODE = '';
+    try {
+      var qs = decodeURIComponent(window.location.search || '');
+      var mm = qs.match(/mode=(in|out|leave|report)/);
+      if (mm) MODE = mm[1];
+    } catch (e) {}
+
+    var profile = null;
+    var currentYm = null;
+    var punchMode = 'in';
+    var submitted = false;
+
+    window.onerror = function (msg, src, line) {
+      try { showError('JSエラー: ' + msg + ' (line ' + line + ')'); } catch (e) {}
+    };
+
+    function $(id) { return document.getElementById(id); }
+    function show(id) {
+      ['viewLoading','viewError','viewHome','viewPunch','viewLeave','viewReport'].forEach(function (v) {
+        $(v).classList.add('hidden');
+      });
+      $(id).classList.remove('hidden');
+    }
+    function showError(msg) {
+      $('errorText').textContent = msg;
+      show('viewError');
+    }
+    function userLine() { return profile ? (profile.displayName + ' さん') : ''; }
+
+    // GAS API 呼び出し (text/plainでCORSプリフライトを回避)
+    function api(payload) {
+      return fetch(GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      }).then(function (r) {
+        if (!r.ok) throw new Error('通信エラー (' + r.status + ')');
+        return r.json();
+      });
+    }
+
+    window.addEventListener('load', function () {
+      if (typeof woff === 'undefined') { showError('WOFF SDKの読み込みに失敗しました。通信環境をご確認ください。'); return; }
+      $('loadingText').textContent = '初期化中...';
+      var timer = setTimeout(function () { showError('初期化がタイムアウトしました。トークのボタンから開き直してください。'); }, 15000);
+      woff.init({ woffId: WOFF_ID })
+        .then(function () {
+          if (typeof woff.isLoggedIn === 'function' && !woff.isLoggedIn()) {
+            clearTimeout(timer);
+            $('errorText').textContent = 'PCブラウザで開いています。スマホのLINE WORKSのボタンから開くか、下のボタンでログインしてください。';
+            var lbtn = document.createElement('button');
+            lbtn.className = 'bigbtn blue';
+            lbtn.textContent = 'LINE WORKSでログイン';
+            lbtn.onclick = function () { woff.login({ redirectUri: window.location.href }); };
+            $('viewError').appendChild(lbtn);
+            show('viewError');
+            return null;
+          }
+          return woff.getProfile();
+        })
+        .then(function (p) {
+          clearTimeout(timer);
+          if (!p) return;
+          profile = p;
+          route();
+        })
+        .catch(function (err) {
+          clearTimeout(timer);
+          showError('初期化に失敗しました: ' + err);
+        });
+    });
+
+    function route() {
+      if (MODE === 'in' || MODE === 'out') { showPunch(MODE); }
+      else if (MODE === 'leave') { showLeave(); }
+      else if (MODE === 'report') { showReport(); }
+      else {
+        $('homeUser').textContent = userLine();
+        show('viewHome');
+      }
+    }
+
+    /* ---------- 打刻 (全自動) ---------- */
+    function showPunch(mode) {
+      punchMode = mode;
+      submitted = false;
+      $('punchTitle').textContent = mode === 'in' ? '🟢 出勤打刻' : '🔴 退勤打刻';
+      $('punchUser').textContent = userLine();
+      show('viewPunch');
+      startPunch();
+    }
+
+    function startPunch() {
+      $('punchRetryBtn').classList.add('hidden');
+      $('punchNoLocBtn').classList.add('hidden');
+      $('punchIcon').textContent = '📍';
+      if (!navigator.geolocation) {
+        gpsFailed('この端末では位置情報を利用できません。');
+        return;
+      }
+      $('gpsStatus').textContent = '位置情報を取得しています...';
+      $('gpsStatus').className = 'status';
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          submitPunch({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            acc: pos.coords.accuracy
+          });
+        },
+        function () {
+          gpsFailed('位置情報を取得できませんでした。スマホの設定でLINE WORKSに位置情報の利用を許可してください。');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      );
+    }
+
+    function gpsFailed(msg) {
+      $('gpsStatus').textContent = '⚠ ' + msg;
+      $('gpsStatus').className = 'status err';
+      $('punchRetryBtn').classList.remove('hidden');
+      $('punchNoLocBtn').classList.remove('hidden');
+    }
+
+    function submitPunch(loc) {
+      if (submitted) return;
+      submitted = true;
+      $('punchRetryBtn').classList.add('hidden');
+      $('punchNoLocBtn').classList.add('hidden');
+      $('gpsStatus').textContent = '打刻しています...';
+      $('gpsStatus').className = 'status';
+      api({
+        action: 'punch',
+        mode: punchMode,
+        userId: profile.userId,
+        displayName: profile.displayName,
+        lat: loc ? loc.lat : null,
+        lng: loc ? loc.lng : null,
+        acc: loc ? loc.acc : null
+      }).then(function (res) {
+        $('punchIcon').textContent = punchMode === 'in' ? '🟢' : '🔴';
+        $('gpsStatus').textContent = '✅ ' + res.message;
+        $('gpsStatus').className = 'status ok';
+        setTimeout(function () {
+          try { woff.closeWindow(); } catch (e) {}
+        }, 1800);
+      }).catch(function (err) {
+        submitted = false;
+        $('gpsStatus').textContent = '⚠ 送信に失敗しました: ' + err.message;
+        $('gpsStatus').className = 'status err';
+        $('punchRetryBtn').classList.remove('hidden');
+      });
+    }
+
+    /* ---------- 有休申請 ---------- */
+    function showLeave() {
+      $('leaveUser').textContent = userLine();
+      var d = new Date();
+      d.setDate(d.getDate() + 1);
+      $('leaveDate').value = d.toISOString().slice(0, 10);
+      $('leaveResult').classList.add('hidden');
+      show('viewLeave');
+    }
+
+    function doLeave() {
+      var date = $('leaveDate').value;
+      if (!date) { alert('日付を選択してください。'); return; }
+      $('leaveBtn').disabled = true;
+      api({
+        action: 'leave',
+        userId: profile.userId,
+        displayName: profile.displayName,
+        date: date,
+        note: $('leaveNote').value
+      }).then(function (res) {
+        $('leaveResult').textContent = '✅ ' + res.message;
+        $('leaveResult').classList.remove('hidden');
+        $('leaveBtn').disabled = false;
+        setTimeout(function () {
+          try { woff.closeWindow(); } catch (e) {}
+        }, 1800);
+      }).catch(function (err) {
+        alert('送信に失敗しました: ' + err.message);
+        $('leaveBtn').disabled = false;
+      });
+    }
+
+    /* ---------- 出勤簿 ---------- */
+    function showReport() {
+      $('reportUser').textContent = userLine();
+      show('viewReport');
+      loadReport(null);
+    }
+
+    function moveMonth(diff) {
+      if (!currentYm) return;
+      var p = currentYm.split('-');
+      var d = new Date(Number(p[0]), Number(p[1]) - 1 + diff, 1);
+      var ym = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+      loadReport(ym);
+    }
+
+    function loadReport(ym) {
+      $('reportBody').innerHTML = '<div class="spinner">読み込み中...</div>';
+      api({ action: 'report', userId: profile.userId, ym: ym })
+        .then(renderReport)
+        .catch(function (err) {
+          $('reportBody').innerHTML = '<div class="status err">読み込みに失敗しました: ' + err.message + '</div>';
+        });
+    }
+
+    function renderReport(rep) {
+      currentYm = rep.ym;
+      $('reportMonth').textContent = rep.label;
+      $('sumWork').textContent = rep.summary.workDays + '日';
+      $('sumLeave').textContent = rep.summary.leaveDays + '日';
+      $('sumHours').textContent = rep.summary.totalHours;
+      var html = '<table><tr><th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>時間</th></tr>';
+      rep.rows.forEach(function (r) {
+        var cls = r.leave ? 'leave' : (r.w === '土' ? 'sat' : (r.w === '日' ? 'sun' : ''));
+        var inText = r.leave ? '有休' : (r.in || '-');
+        html += '<tr class="' + cls + '">' +
+          '<td>' + r.d + '</td><td>' + r.w + '</td>' +
+          '<td>' + inText + '</td><td>' + (r.out || '-') + '</td><td>' + (r.hours || '-') + '</td></tr>';
+      });
+      html += '</table>';
+      $('reportBody').innerHTML = html;
+    }
+  </script>
+</body>
+</html>
