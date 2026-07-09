@@ -47,6 +47,9 @@
     .monthnav span { font-weight: bold; }
     .spinner { text-align: center; color: #888; padding: 20px; font-size: 14px; }
     .bigicon { text-align: center; font-size: 44px; margin: 8px 0; }
+    .segrow { display: flex; gap: 8px; }
+    .seg { flex: 1; padding: 12px 0; border: 1px solid #ccd4dc; background: #fff; border-radius: 8px; font-size: 15px; cursor: pointer; color: #555; }
+    .seg.segon { background: #3577e5; color: #fff; border-color: #3577e5; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -86,8 +89,15 @@
   <div id="viewLeave" class="card hidden">
     <h1>🏖 有休申請</h1>
     <div class="sub" id="leaveUser"></div>
+    <div class="status hidden" id="leaveBalance"></div>
     <label>取得したい日</label>
     <input type="date" id="leaveDate">
+    <label>種別</label>
+    <div class="segrow">
+      <button type="button" class="seg segon" data-lt="full" onclick="selLeaveType('full')">全日</button>
+      <button type="button" class="seg" data-lt="am" onclick="selLeaveType('am')">午前休</button>
+      <button type="button" class="seg" data-lt="pm" onclick="selLeaveType('pm')">午後休</button>
+    </div>
     <label>メモ (任意)</label>
     <input type="text" id="leaveNote" placeholder="例: 私用のため">
     <div style="height:14px"></div>
@@ -107,6 +117,7 @@
     <div class="summary">
       <div>出勤日数<b id="sumWork">-</b></div>
       <div>有休<b id="sumLeave">-</b></div>
+      <div>有休残<b id="sumRemain">-</b></div>
       <div>総勤務時間<b id="sumHours">-</b></div>
     </div>
     <div id="reportBody"><div class="spinner">読み込み中...</div></div>
@@ -274,13 +285,30 @@
     }
 
     /* ---------- 有休申請 ---------- */
+    var leaveType = 'full';
+    function selLeaveType(lt) {
+      leaveType = lt;
+      var btns = document.querySelectorAll('#viewLeave .seg');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('segon', btns[i].getAttribute('data-lt') === lt);
+      }
+    }
     function showLeave() {
       $('leaveUser').textContent = userLine();
       var d = new Date();
       d.setDate(d.getDate() + 1);
       $('leaveDate').value = d.toISOString().slice(0, 10);
       $('leaveResult').classList.add('hidden');
+      selLeaveType('full');
       show('viewLeave');
+      // 有休残の表示 (report APIから取得)
+      $('leaveBalance').classList.add('hidden');
+      api({ action: 'report', userId: profile.userId }).then(function (rep) {
+        if (rep && rep.summary && rep.summary.leaveRemaining !== null && rep.summary.leaveRemaining !== undefined) {
+          $('leaveBalance').textContent = '🏖 有休残: ' + rep.summary.leaveRemaining + ' 日 (付与 ' + rep.summary.leaveGranted + ' / 消化 ' + rep.summary.leaveConsumed + ')';
+          $('leaveBalance').classList.remove('hidden');
+        }
+      }).catch(function () {});
     }
 
     function doLeave() {
@@ -292,6 +320,7 @@
         userId: profile.userId,
         displayName: profile.displayName,
         date: date,
+        leaveType: leaveType,
         note: $('leaveNote').value
       }).then(function (res) {
         $('leaveResult').textContent = '✅ ' + res.message;
@@ -306,47 +335,4 @@
       });
     }
 
-    /* ---------- 出勤簿 ---------- */
-    function showReport() {
-      $('reportUser').textContent = userLine();
-      show('viewReport');
-      loadReport(null);
-    }
-
-    function moveMonth(diff) {
-      if (!currentYm) return;
-      var p = currentYm.split('-');
-      var d = new Date(Number(p[0]), Number(p[1]) - 1 + diff, 1);
-      var ym = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
-      loadReport(ym);
-    }
-
-    function loadReport(ym) {
-      $('reportBody').innerHTML = '<div class="spinner">読み込み中...</div>';
-      api({ action: 'report', userId: profile.userId, ym: ym })
-        .then(renderReport)
-        .catch(function (err) {
-          $('reportBody').innerHTML = '<div class="status err">読み込みに失敗しました: ' + err.message + '</div>';
-        });
-    }
-
-    function renderReport(rep) {
-      currentYm = rep.ym;
-      $('reportMonth').textContent = rep.label;
-      $('sumWork').textContent = rep.summary.workDays + '日';
-      $('sumLeave').textContent = rep.summary.leaveDays + '日';
-      $('sumHours').textContent = rep.summary.totalHours;
-      var html = '<table><tr><th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>時間</th></tr>';
-      rep.rows.forEach(function (r) {
-        var cls = r.leave ? 'leave' : (r.w === '土' ? 'sat' : (r.w === '日' ? 'sun' : ''));
-        var inText = r.leave ? '有休' : (r.in || '-');
-        html += '<tr class="' + cls + '">' +
-          '<td>' + r.d + '</td><td>' + r.w + '</td>' +
-          '<td>' + inText + '</td><td>' + (r.out || '-') + '</td><td>' + (r.hours || '-') + '</td></tr>';
-      });
-      html += '</table>';
-      $('reportBody').innerHTML = html;
-    }
-  </script>
-</body>
-</html>
+    /* ---------- 出勤簿 ---------- 
