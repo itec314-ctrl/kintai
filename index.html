@@ -39,9 +39,9 @@
     tr.sat td { background: #f2f7ff; }
     tr.sun td { background: #fff4f4; }
     tr.leave td { background: #fff8e0; }
-    .summary { display: flex; gap: 8px; margin-bottom: 12px; }
-    .summary div { flex: 1; background: #f0f4f8; border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; color: #666; }
-    .summary b { display: block; font-size: 17px; color: #222; }
+    .summary { display: flex; gap: 6px; margin-bottom: 12px; }
+    .summary div { flex: 1; background: #f0f4f8; border-radius: 8px; padding: 8px 4px; text-align: center; font-size: 11px; color: #666; }
+    .summary b { display: block; font-size: 16px; color: #222; }
     .monthnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .monthnav button { background: #eef3f8; border: none; border-radius: 8px; padding: 8px 14px; font-size: 15px; cursor: pointer; }
     .monthnav span { font-weight: bold; }
@@ -53,19 +53,16 @@
   </style>
 </head>
 <body>
-  <!-- 読み込み中 -->
   <div id="viewLoading" class="card">
     <div class="spinner" id="loadingText">読み込み中...</div>
   </div>
 
-  <!-- エラー -->
   <div id="viewError" class="card hidden">
     <h1>エラー</h1>
     <div class="status err" id="errorText"></div>
     <div class="sub">LINE WORKSアプリのトーク画面のボタンから開いてください。解決しない場合は管理者に連絡してください。</div>
   </div>
 
-  <!-- ホーム(モード指定なしのとき) -->
   <div id="viewHome" class="card hidden">
     <h1>勤怠メニュー</h1>
     <div class="sub" id="homeUser"></div>
@@ -75,7 +72,6 @@
     <button class="bigbtn gray" onclick="showReport()">📋 出勤簿を見る</button>
   </div>
 
-  <!-- 打刻 (自動実行) -->
   <div id="viewPunch" class="card hidden">
     <h1 id="punchTitle">出勤打刻</h1>
     <div class="sub" id="punchUser"></div>
@@ -85,7 +81,6 @@
     <button id="punchNoLocBtn" class="bigbtn gray hidden" onclick="submitPunch(null)">位置情報なしで打刻する</button>
   </div>
 
-  <!-- 有休申請 -->
   <div id="viewLeave" class="card hidden">
     <h1>🏖 有休申請</h1>
     <div class="sub" id="leaveUser"></div>
@@ -105,7 +100,6 @@
     <div class="status ok hidden" id="leaveResult"></div>
   </div>
 
-  <!-- 出勤簿 -->
   <div id="viewReport" class="card hidden">
     <h1>📋 出勤簿</h1>
     <div class="sub" id="reportUser"></div>
@@ -118,17 +112,15 @@
       <div>出勤日数<b id="sumWork">-</b></div>
       <div>有休<b id="sumLeave">-</b></div>
       <div>有休残<b id="sumRemain">-</b></div>
-      <div>総勤務時間<b id="sumHours">-</b></div>
+      <div>総勤務<b id="sumHours">-</b></div>
     </div>
     <div id="reportBody"><div class="spinner">読み込み中...</div></div>
   </div>
 
   <script src="https://static.worksmobile.net/static/wm/woff/edge/3.7.1/sdk.js" charset="utf-8"></script>
   <script>
-    // ====== 設定 ======
     var WOFF_ID = 'bujTAWTOk6q6kDjT-ulrkQ';
     var GAS_URL = 'https://script.google.com/macros/s/AKfycbxitHi6mVH5Eehe1Hf5esNFKBeMAR4ByQG70A5dHHty0btLLs7P2uiHYaoyxWL_NNWx/exec';
-    // ==================
 
     var MODE = '';
     try {
@@ -141,6 +133,7 @@
     var currentYm = null;
     var punchMode = 'in';
     var submitted = false;
+    var leaveType = 'full';
 
     window.onerror = function (msg, src, line) {
       try { showError('JSエラー: ' + msg + ' (line ' + line + ')'); } catch (e) {}
@@ -148,18 +141,13 @@
 
     function $(id) { return document.getElementById(id); }
     function show(id) {
-      ['viewLoading','viewError','viewHome','viewPunch','viewLeave','viewReport'].forEach(function (v) {
-        $(v).classList.add('hidden');
-      });
+      var ids = ['viewLoading', 'viewError', 'viewHome', 'viewPunch', 'viewLeave', 'viewReport'];
+      for (var i = 0; i < ids.length; i++) { $(ids[i]).classList.add('hidden'); }
       $(id).classList.remove('hidden');
     }
-    function showError(msg) {
-      $('errorText').textContent = msg;
-      show('viewError');
-    }
+    function showError(msg) { $('errorText').textContent = msg; show('viewError'); }
     function userLine() { return profile ? (profile.displayName + ' さん') : ''; }
 
-    // GAS API 呼び出し (text/plainでCORSプリフライトを回避)
     function api(payload) {
       return fetch(GAS_URL, {
         method: 'POST',
@@ -206,10 +194,7 @@
       if (MODE === 'in' || MODE === 'out') { showPunch(MODE); }
       else if (MODE === 'leave') { showLeave(); }
       else if (MODE === 'report') { showReport(); }
-      else {
-        $('homeUser').textContent = userLine();
-        show('viewHome');
-      }
+      else { $('homeUser').textContent = userLine(); show('viewHome'); }
     }
 
     /* ---------- 打刻 (全自動) ---------- */
@@ -221,39 +206,25 @@
       show('viewPunch');
       startPunch();
     }
-
     function startPunch() {
       $('punchRetryBtn').classList.add('hidden');
       $('punchNoLocBtn').classList.add('hidden');
       $('punchIcon').textContent = '📍';
-      if (!navigator.geolocation) {
-        gpsFailed('この端末では位置情報を利用できません。');
-        return;
-      }
+      if (!navigator.geolocation) { gpsFailed('この端末では位置情報を利用できません。'); return; }
       $('gpsStatus').textContent = '位置情報を取得しています...';
       $('gpsStatus').className = 'status';
       navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          submitPunch({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            acc: pos.coords.accuracy
-          });
-        },
-        function () {
-          gpsFailed('位置情報を取得できませんでした。スマホの設定でLINE WORKSに位置情報の利用を許可してください。');
-        },
+        function (pos) { submitPunch({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy }); },
+        function () { gpsFailed('位置情報を取得できませんでした。スマホの設定でLINE WORKSに位置情報の利用を許可してください。'); },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
       );
     }
-
     function gpsFailed(msg) {
       $('gpsStatus').textContent = '⚠ ' + msg;
       $('gpsStatus').className = 'status err';
       $('punchRetryBtn').classList.remove('hidden');
       $('punchNoLocBtn').classList.remove('hidden');
     }
-
     function submitPunch(loc) {
       if (submitted) return;
       submitted = true;
@@ -262,20 +233,13 @@
       $('gpsStatus').textContent = '打刻しています...';
       $('gpsStatus').className = 'status';
       api({
-        action: 'punch',
-        mode: punchMode,
-        userId: profile.userId,
-        displayName: profile.displayName,
-        lat: loc ? loc.lat : null,
-        lng: loc ? loc.lng : null,
-        acc: loc ? loc.acc : null
+        action: 'punch', mode: punchMode, userId: profile.userId, displayName: profile.displayName,
+        lat: loc ? loc.lat : null, lng: loc ? loc.lng : null, acc: loc ? loc.acc : null
       }).then(function (res) {
         $('punchIcon').textContent = punchMode === 'in' ? '🟢' : '🔴';
         $('gpsStatus').textContent = '✅ ' + res.message;
         $('gpsStatus').className = 'status ok';
-        setTimeout(function () {
-          try { woff.closeWindow(); } catch (e) {}
-        }, 1800);
+        setTimeout(function () { try { woff.closeWindow(); } catch (e) {} }, 1800);
       }).catch(function (err) {
         submitted = false;
         $('gpsStatus').textContent = '⚠ 送信に失敗しました: ' + err.message;
@@ -284,8 +248,7 @@
       });
     }
 
-    /* ---------- 有休申請 ---------- */
-    var leaveType = 'full';
+    /* ---------- 有休申請 (半休・残日数対応) ---------- */
     function selLeaveType(lt) {
       leaveType = lt;
       var btns = document.querySelectorAll('#viewLeave .seg');
@@ -301,7 +264,6 @@
       $('leaveResult').classList.add('hidden');
       selLeaveType('full');
       show('viewLeave');
-      // 有休残の表示 (report APIから取得)
       $('leaveBalance').classList.add('hidden');
       api({ action: 'report', userId: profile.userId }).then(function (rep) {
         if (rep && rep.summary && rep.summary.leaveRemaining !== null && rep.summary.leaveRemaining !== undefined) {
@@ -310,29 +272,63 @@
         }
       }).catch(function () {});
     }
-
     function doLeave() {
       var date = $('leaveDate').value;
       if (!date) { alert('日付を選択してください。'); return; }
       $('leaveBtn').disabled = true;
       api({
-        action: 'leave',
-        userId: profile.userId,
-        displayName: profile.displayName,
-        date: date,
-        leaveType: leaveType,
-        note: $('leaveNote').value
+        action: 'leave', userId: profile.userId, displayName: profile.displayName,
+        date: date, leaveType: leaveType, note: $('leaveNote').value
       }).then(function (res) {
         $('leaveResult').textContent = '✅ ' + res.message;
         $('leaveResult').classList.remove('hidden');
         $('leaveBtn').disabled = false;
-        setTimeout(function () {
-          try { woff.closeWindow(); } catch (e) {}
-        }, 1800);
+        setTimeout(function () { try { woff.closeWindow(); } catch (e) {} }, 2000);
       }).catch(function (err) {
         alert('送信に失敗しました: ' + err.message);
         $('leaveBtn').disabled = false;
       });
     }
 
-    /* ---------- 出勤簿 ---------- 
+    /* ---------- 出勤簿 ---------- */
+    function showReport() {
+      $('reportUser').textContent = userLine();
+      show('viewReport');
+      loadReport(null);
+    }
+    function moveMonth(diff) {
+      if (!currentYm) return;
+      var p = currentYm.split('-');
+      var d = new Date(Number(p[0]), Number(p[1]) - 1 + diff, 1);
+      var ym = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+      loadReport(ym);
+    }
+    function loadReport(ym) {
+      $('reportBody').innerHTML = '<div class="spinner">読み込み中...</div>';
+      api({ action: 'report', userId: profile.userId, ym: ym })
+        .then(renderReport)
+        .catch(function (err) {
+          $('reportBody').innerHTML = '<div class="status err">読み込みに失敗しました: ' + err.message + '</div>';
+        });
+    }
+    function renderReport(rep) {
+      currentYm = rep.ym;
+      $('reportMonth').textContent = rep.label;
+      $('sumWork').textContent = rep.summary.workDays + '日';
+      $('sumLeave').textContent = rep.summary.leaveDays + '日';
+      $('sumRemain').textContent = (rep.summary.leaveRemaining === null || rep.summary.leaveRemaining === undefined) ? '-' : rep.summary.leaveRemaining + '日';
+      $('sumHours').textContent = rep.summary.totalHours;
+      var html = '<table><tr><th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>時間</th></tr>';
+      rep.rows.forEach(function (r) {
+        var cls = r.leave ? 'leave' : (r.w === '土' ? 'sat' : (r.w === '日' ? 'sun' : ''));
+        var inText = r.leave ? (r.leaveType || '有休') : (r.in || '-');
+        html += '<tr class="' + cls + '">' +
+          '<td>' + r.d + '</td><td>' + r.w + '</td>' +
+          '<td>' + inText + '</td><td>' + (r.leave ? '-' : (r.out || '-')) + '</td><td>' + (r.hours || '-') + '</td></tr>';
+      });
+      html += '</table>';
+      $('reportBody').innerHTML = html;
+    }
+  </script>
+</body>
+</html>
