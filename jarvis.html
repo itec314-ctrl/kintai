@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: radial-gradient(circle at 50% 30%, #0b2236 0%, #04090f 70%); color: #d8f3ff;
+      min-height: 100vh; padding: 16px;
+    }
+    .wrap { max-width: 560px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    header h1 { font-size: 16px; letter-spacing: .3em; color: #7fdcff; }
+    header button { background: none; border: 1px solid #2a5878; color: #7fdcff; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+    .reactor {
+      width: 200px; height: 200px; margin: 24px auto; border-radius: 50%; cursor: pointer;
+      background: radial-gradient(circle, #e9fbff 0%, #6fd6ff 18%, #136a96 45%, #06263a 70%);
+      box-shadow: 0 0 30px #1a8fc4, inset 0 0 30px #0a3b57; transition: box-shadow .3s, transform .3s;
+    }
+    .reactor.listening { box-shadow: 0 0 70px #4fe0ff, 0 0 140px #1a8fc4, inset 0 0 30px #0a3b57; transform: scale(1.06); }
+    .reactor.thinking { animation: pulse 1s infinite alternate; }
+    .reactor.speaking { box-shadow: 0 0 90px #9ff0ff, 0 0 160px #36b8ff, inset 0 0 30px #0a3b57; }
+    .reactor.off { filter: grayscale(.8) brightness(.5); }
+    @keyframes pulse { from { transform: scale(.97); } to { transform: scale(1.04); } }
+    .state { text-align: center; font-size: 13px; color: #7fb8d4; min-height: 20px; margin-bottom: 12px; }
+    .log { background: rgba(10,40,60,.5); border: 1px solid #16405c; border-radius: 12px; padding: 12px; height: 38vh; overflow-y: auto; font-size: 14px; line-height: 1.6; }
+    .msg { margin-bottom: 10px; white-space: pre-wrap; }
+    .msg.user { color: #9fb9c9; }
+    .msg.user::before { content: "あなた ▸ "; color: #5c8aa6; }
+    .msg.jarvis::before { content: "JARVIS ▸ "; color: #4fe0ff; }
+    .msg.sys { color: #e0a96d; font-size: 12px; }
+    .inputrow { display: flex; gap: 8px; margin-top: 10px; }
+    .inputrow input { flex: 1; background: #071a28; border: 1px solid #2a5878; color: #d8f3ff; border-radius: 8px; padding: 12px; font-size: 16px; }
+    .inputrow button, .btn { background: #136a96; border: none; color: #fff; border-radius: 8px; padding: 10px 16px; font-size: 15px; cursor: pointer; }
+    .btn.ghost { background: none; border: 1px solid #2a5878; color: #7fdcff; }
+    .hidden { display: none; }
+    .panel { background: #071a28; border: 1px solid #16405c; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    .panel h2 { font-size: 15px; color: #7fdcff; margin-bottom: 4px; }
+    .panel .sub { font-size: 12px; color: #7fa3b8; margin-bottom: 8px; line-height: 1.6; }
+    label { font-size: 13px; color: #9fc4d8; display: block; margin: 12px 0 4px; }
+    .panel input[type=text], .panel input[type=password], .panel textarea {
+      width: 100%; background: #04121c; border: 1px solid #2a5878; color: #d8f3ff; border-radius: 8px; padding: 10px; font-size: 15px; font-family: inherit;
+    }
+    .panel textarea { min-height: 70px; }
+    .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; }
+    .row { display: flex; gap: 8px; margin-top: 16px; }
+    a { color: #7fdcff; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>J.A.R.V.I.S.</h1>
+    <div>
+      <button id="resetBtn" title="会話をリセット">リセット</button>
+      <button id="settingsBtn">設定</button>
+    </div>
+  </header>
+
+  <!-- ---------- セットアップ / 設定 ---------- -->
+  <div id="viewSettings" class="hidden">
+    <div class="panel">
+      <h2>① あなたのこと</h2>
+      <div class="sub">ここで答えた内容をJarvisがずっと覚えています。具体的に書くほど賢く動きます。</div>
+      <label>名前</label><input type="text" id="sName" placeholder="例: 阿部 睦">
+      <label>呼ばれたい呼び方</label><input type="text" id="sCall" placeholder="例: むつきさん / ボス">
+      <label>仕事・普段やっている作業</label><textarea id="sJob" placeholder="例: SNSマーケター。毎朝インスタの投稿を作り、週次で売上を集計している"></textarea>
+    </div>
+    <div class="panel">
+      <h2>② Jarvisにやってほしいこと</h2>
+      <textarea id="sWants" placeholder="例: 今日やることの整理、インスタ投稿文の下書き、売上報告の要約、調べもの"></textarea>
+      <label>覚えておいてほしいメモ (任意)</label>
+      <textarea id="sNotes" placeholder="例: 取引先A社の担当は田中さん。売上目標は月300万円"></textarea>
+    </div>
+    <div class="panel">
+      <h2>③ 合言葉</h2>
+      <div class="sub">カンマ区切りで複数登録できます。音声認識の揺れに備えて表記ゆれも入れておくと確実です。</div>
+      <input type="text" id="sWake" placeholder="ジャーヴィス,ジャービス,jarvis">
+      <div class="check"><input type="checkbox" id="sClap"><span>手を2回叩いて呼び出す</span></div>
+    </div>
+    <div class="panel">
+      <h2>④ 頭脳 (Claude API)</h2>
+      <div class="sub"><a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">Claude Console</a> でAPIキーを作って貼ってください。キーはこのブラウザの中だけに保存されます。</div>
+      <input type="password" id="sClaudeKey" placeholder="sk-ant-...">
+    </div>
+    <div class="panel">
+      <h2>⑤ 声 (ElevenLabs)</h2>
+      <div class="sub">
+        未設定ならブラウザ標準の音声で話します。<br>
+        <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">ElevenLabs</a> でAPIキーを作成し、「ボイスデザイン」で日本語の声を作ってボイスIDを貼ってください。<br>
+        プロンプト例:<br>
+        ネイティブの日本語を話す、30代の日本人女性。スタジオ品質の録音。<br>
+        有能な秘書。明るく、落ち着いていて、親しみやすい。<br>
+        澄んだ温かい声。聞き取りやすいテンポで、丁寧に話す。
+      </div>
+      <label>APIキー</label><input type="password" id="sElevenKey" placeholder="sk_...">
+      <label>ボイスID</label><input type="text" id="sVoiceId" placeholder="例: 21m00Tcm4TlvDq8ikWAM">
+    </div>
+    <div class="row">
+      <button class="btn" id="saveBtn">保存してJarvisを起動</button>
+      <button class="btn ghost" id="cancelBtn">閉じる</button>
+    </div>
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- ---------- メイン ---------- -->
+  <div id="viewMain">
+    <div class="reactor off" id="reactor" title="タップで話しかける"></div>
+    <div class="state" id="state">タップしてJarvisを起動</div>
+    <div class="log" id="log"></div>
+    <div class="inputrow">
+      <input type="text" id="textInput" placeholder="文字で話しかける">
+      <button id="sendBtn">送信</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import Anthropic from 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var STORE_KEY = 'jarvis.settings.v1';
+  var DEFAULT_WAKE = 'ジャーヴィス,ジャービス,jarvis';
+  var MAX_TURNS = 30;
+
+  var settings = loadSettings();
+  var messages = [];
+  var busy = false;          // Claudeに問い合わせ中 or 発話中
+  var awaitingCommand = false;
+  var awaitTimer = null;
+  var recog = null;
+  var recogWanted = false;
+  var started = false;
+  var currentAudio = null;
+
+  /* ---------- 設定 ---------- */
+  function loadSettings() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveSettings() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(settings)); } catch (e) {}
+  }
+  var FIELDS = { sName: 'name', sCall: 'call', sJob: 'job', sWants: 'wants', sNotes: 'notes', sWake: 'wake', sClaudeKey: 'claudeKey', sElevenKey: 'elevenKey', sVoiceId: 'voiceId' };
+  function openSettings() {
+    Object.keys(FIELDS).forEach(function (id) { $(id).value = settings[FIELDS[id]] || ''; });
+    if (!settings.wake) $('sWake').value = DEFAULT_WAKE;
+    $('sClap').checked = !!settings.clap;
+    $('viewMain').classList.add('hidden');
+    $('viewSettings').classList.remove('hidden');
+  }
+  function closeSettings() {
+    $('viewSettings').classList.add('hidden');
+    $('viewMain').classList.remove('hidden');
+  }
+  $('settingsBtn').onclick = openSettings;
+  $('cancelBtn').onclick = closeSettings;
+  $('saveBtn').onclick = function () {
+    Object.keys(FIELDS).forEach(function (id) { settings[FIELDS[id]] = $(id).value.trim(); });
+    settings.clap = $('sClap').checked;
+    if (!settings.claudeKey) { alert('Claude APIキーを入力してください。'); return; }
+    saveSettings();
+    resetConversation();
+    closeSettings();
+    start();
+  };
+  $('resetBtn').onclick = function () { resetConversation(); addLog('sys', '会話をリセットしました。'); };
+
+  function wakeWords() {
+    return (settings.wake || DEFAULT_WAKE).split(/[,、]/).map(function (w) { return w.trim().toLowerCase(); }).filter(Boolean);
+  }
+
+  /* ---------- 頭脳 (Claude) ---------- */
+  function systemPrompt() {
+    var call = settings.call || settings.name || 'あなた';
+    return [
+      'あなたは「ジャーヴィス」。映画アイアンマンのJ.A.R.V.I.S.のような、' + call + '専属の有能なAIアシスタントです。',
+      '',
+      '# ユーザー',
+      '名前: ' + (settings.name || '未設定'),
+      '呼び方: ' + call + '(返答では必ずこの呼び方で呼びかける)',
+      '仕事: ' + (settings.job || '未設定'),
+      '',
+      '# 主に頼みたいこと',
+      settings.wants || '日々の雑務、調べもの、文章作成',
+      '',
+      '# 覚えておくこと',
+      settings.notes || '(なし)',
+      '',
+      '# 話し方',
+      '返答はそのまま音声で読み上げられます。落ち着いた丁寧な日本語で、まず結論を1〜3文で話してください。',
+      'Markdown・箇条書き記号・絵文字・URLは使わず、耳で聞いて分かる文章にしてください。',
+      '投稿文の下書きなど長い文章を頼まれたときだけ、本文をそのまま書いて構いません。',
+      '最新の情報や天気・ニュースが必要なときは web_search を使ってください。',
+      'メールやカレンダーなど、接続されていない情報は推測で答えず、まだ接続されていないと正直に伝えてください。'
+    ].join('\n');
+  }
+
+  function resetConversation() { messages = []; }
+
+  async function askClaude(text) {
+    var client = new Anthropic({ apiKey: settings.claudeKey, dangerouslyAllowBrowser: true });
+    if (messages.length >= MAX_TURNS * 2) resetConversation();
+    var now = new Date().toLocaleString('ja-JP', { dateStyle: 'full', timeStyle: 'short' });
+    messages.push({ role: 'user', content: '[現在日時: ' + now + ']\n' + text });
+
+    // web_search はサーバー側ツールなので、pause_turn のときだけ続きを要求する
+    for (var i = 0; i < 5; i++) {
+      var res;
+      try {
+        res = await client.beta.messages.create({
+          model: 'claude-opus-5-5',
+          max_tokens: 16000,
+          system: systemPrompt(),
+          output_config: { effort: 'low' },
+          betas: ['server-side-fallback-2026-07-01'],
+          fallbacks: 'default',
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3, user_location: { type: 'approximate', country: 'JP' } }],
+          messages: messages
+        });
+      } catch (err) {
+        messages.pop();
+        throw err;
+      }
+      messages.push({ role: 'assistant', content: res.content });
+      if (res.stop_reason === 'pause_turn') continue;
+      if (res.stop_reason === 'refusal') return '申し訳ありません、そのご依頼にはお応えできません。';
+      var out = res.content.filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join('');
+      return out.trim() || 'かしこまりました。';
+    }
+    return '少し時間がかかっています。もう一度お願いできますか。';
+  }
+
+  function describeError(err) {
+    if (err instanceof Anthropic.AuthenticationError) return 'Claude APIキーが正しくありません。設定を確認してください。';
+    if (err instanceof Anthropic.RateLimitError) return 'リクエストが多すぎます。少し待ってからもう一度お願いします。';
+    if (err instanceof Anthropic.APIConnectionError) return '通信に失敗しました。ネットワークを確認してください。';
+    if (err instanceof Anthropic.APIError) return 'Claude APIでエラーが起きました (' + err.status + ')。';
+    return 'エラーが起きました: ' + (err && err.message ? err.message : err);
+  }
+
+  /* ---------- 声 (ElevenLabs → ブラウザ音声) ---------- */
+  async function speak(text) {
+    var spoken = text.replace(/https?:\/\/\S+/g, '').replace(/[#*_`>|-]{1,}/g, ' ');
+    if (settings.elevenKey && settings.voiceId) {
+      try {
+        var r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + encodeURIComponent(settings.voiceId) + '?output_format=mp3_44100_128', {
+          method: 'POST',
+          headers: { 'xi-api-key': settings.elevenKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: spoken, model_id: 'eleven_multilingual_v2' })
+        });
+        if (!r.ok) throw new Error('ElevenLabs ' + r.status);
+        var url = URL.createObjectURL(await r.blob());
+        await new Promise(function (resolve) {
+          currentAudio = new Audio(url);
+          currentAudio.onended = currentAudio.onerror = function () { URL.revokeObjectURL(url); currentAudio = null; resolve(); };
+          currentAudio.play().catch(resolve);
+        });
+        return;
+      } catch (e) {
+        addLog('sys', '声の生成に失敗したため標準音声で話します (' + e.message + ')。無料枠を使い切った可能性があります。');
+      }
+    }
+    if (!('speechSynthesis' in window)) return;
+    await new Promise(function (resolve) {
+      var u = new SpeechSynthesisUtterance(spoken);
+      u.lang = 'ja-JP';
+      var ja = speechSynthesis.getVoices().filter(function (v) { return v.lang.indexOf('ja') === 0; })[0];
+      if (ja) u.voice = ja;
+      u.onend = u.onerror = resolve;
+      speechSynthesis.speak(u);
+    });
+  }
+
+  /* ---------- 1往復 ---------- */
+  async function handleCommand(text) {
+    if (busy || !text) return;
+    if (!settings.claudeKey) { openSettings(); return; }
+    busy = true;
+    stopAwaiting();
+    pauseRecognition();
+    addLog('user', text);
+    setMode('thinking', '考えています...');
+    var reply;
+    try { reply = await askClaude(text); } catch (err) { reply = describeError(err); }
+    addLog('jarvis', reply);
+    setMode('speaking', '話しています...');
+    await speak(reply);
+    busy = false;
+    idle();
+    resumeRecognition();
+  }
+
+  /* ---------- 合言葉 (音声認識) ---------- */
+  function setupRecognition() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { addLog('sys', 'このブラウザは音声認識に対応していません。ChromeかSafariで開くか、文字で話しかけてください。'); return; }
+    recog = new SR();
+    recog.lang = 'ja-JP';
+    recog.continuous = true;
+    recog.interimResults = false;
+    recog.onresult = function (ev) {
+      if (busy) return;
+      var said = '';
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) said += ev.results[i][0].transcript;
+      }
+      said = said.trim();
+      if (!said) return;
+      if (awaitingCommand) { handleCommand(said); return; }
+      var lower = said.toLowerCase();
+      var hit = wakeWords().map(function (w) { return { w: w, i: lower.indexOf(w) }; }).filter(function (x) { return x.i >= 0; })[0];
+      if (!hit) return;
+      var rest = said.slice(hit.i + hit.w.length).replace(/^[、。,.!！?？\s]+/, '');
+      if (rest.length >= 2) handleCommand(rest);
+      else summon();
+    };
+    recog.onerror = function (ev) {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        recogWanted = false;
+        addLog('sys', 'マイクの使用が許可されていません。ブラウザのアドレスバーからマイクを許可してください。');
+      }
+    };
+    // continuous でも一定時間で止まるので、聞き続けるために再開する
+    recog.onend = function () { if (recogWanted) { try { recog.start(); } catch (e) {} } };
+  }
+  function resumeRecognition() { if (!recog) return; recogWanted = true; try { recog.start(); } catch (e) {} }
+  function pauseRecognition() { if (!recog) return; recogWanted = false; try { recog.stop(); } catch (e) {} }
+
+  function summon() {
+    if (busy) return;
+    if (!recog) { $('textInput').focus(); return; }
+    awaitingCommand = true;
+    setMode('listening', 'どうぞ、お話しください');
+    clearTimeout(awaitTimer);
+    awaitTimer = setTimeout(function () { stopAwaiting(); idle(); }, 8000);
+  }
+  function stopAwaiting() { awaitingCommand = false; clearTimeout(awaitTimer); }
+
+  /* ---------- 拍手2回で呼び出し ---------- */
+  async function setupClap() {
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      var buf = new Float32Array(analyser.fftSize);
+      var avg = 0.01, lastPeak = 0, firstClap = 0;
+      (function tick() {
+        analyser.getFloatTimeDomainData(buf);
+        var peak = 0;
+        for (var i = 0; i < buf.length; i++) { var a = Math.abs(buf[i]); if (a > peak) peak = a; }
+        var t = performance.now();
+        // 周囲の音量より急に大きい短い音 = 拍手
+        if (peak > 0.35 && peak > avg * 6 && t - lastPeak > 120) {
+          lastPeak = t;
+          if (firstClap && t - firstClap < 700) { firstClap = 0; if (!busy && !awaitingCommand) summon(); }
+          else firstClap = t;
+        }
+        avg = avg * 0.95 + peak * 0.05;
+        requestAnimationFrame(tick);
+      })();
+    } catch (e) {
+      addLog('sys', '拍手検知のためのマイクを使えませんでした。');
+    }
+  }
+
+  /* ---------- 画面 ---------- */
+  function setMode(mode, label) {
+    $('reactor').className = 'reactor ' + mode;
+    $('state').textContent = label;
+  }
+  function idle() {
+    var w = wakeWords()[0] || 'ジャーヴィス';
+    var hint = recog ? '「' + w + '」と呼んでください' : '文字で話しかけてください';
+    if (settings.clap) hint += ' / 手を2回叩く';
+    setMode('', hint);
+  }
+  function addLog(kind, text) {
+    var d = document.createElement('div');
+    d.className = 'msg ' + kind;
+    d.textContent = text;
+    $('log').appendChild(d);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  function start() {
+    if (!started) {
+      started = true;
+      setupRecognition();
+      if (settings.clap) setupClap();
+      var call = settings.call || settings.name;
+      addLog('jarvis', (call ? call + '、' : '') + 'おかえりなさい。ご用の際はお呼びください。');
+    }
+    resumeRecognition();
+    idle();
+  }
+
+  $('reactor').onclick = function () {
+    if (!settings.claudeKey) { openSettings(); return; }
+    if (!started) { start(); return; }
+    if (currentAudio) { currentAudio.pause(); currentAudio.onended(); return; }
+    if ('speechSynthesis' in window && speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+    summon();
+  };
+  function sendText() {
+    var v = $('textInput').value.trim();
+    if (!v) return;
+    $('textInput').value = '';
+    if (!started && settings.claudeKey) start();
+    handleCommand(v);
+  }
+  $('sendBtn').onclick = sendText;
+  $('textInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) sendText(); });
+
+  // ⌘Q 相当: タブを閉じれば聞き取りも止まる
+  window.addEventListener('pagehide', pauseRecognition);
+
+  if (!settings.claudeKey) {
+    addLog('sys', 'はじめまして。まず「設定」からあなたのことと、Claude APIキーを登録してください。');
+    openSettings();
+  } else {
+    $('state').textContent = 'タップしてJarvisを起動';
+  }
+</script>
+</body>
+</html>
