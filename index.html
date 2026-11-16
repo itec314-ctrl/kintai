@@ -125,7 +125,7 @@
     </div>
     <label>本当の時刻</label>
     <input type="time" id="fixTime">
-    <label>理由</label>
+    <label>理由 (任意)</label>
     <input type="text" id="fixNote" placeholder="例: 帰ってから退勤を押し忘れたのに気づいた">
     <div style="height:14px"></div>
     <button class="bigbtn orange" id="fixBtn" onclick="doFix()">この内容で申請する</button>
@@ -351,7 +351,6 @@
       var date = $('fixDate').value, time = $('fixTime').value, note = $('fixNote').value.trim();
       if (!date) { alert('日付を選択してください。'); return; }
       if (!time) { alert('本当の時刻を入力してください。'); return; }
-      if (!note) { alert('理由を入力してください。'); return; }
       $('fixBtn').disabled = true;
       api({
         action: 'fix', userId: profile.userId, displayName: profile.displayName,
