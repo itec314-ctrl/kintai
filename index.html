@@ -226,7 +226,8 @@
 
     function route() {
       if (MODE === 'in' || MODE === 'out') { showPunch(MODE); }
-      else if (MODE === 'leave') { showLeave(); }
+      // 古い固定メニュー「有休申請」(mode=leave) を覚えたままのアプリでも、押し忘れの申請を選べるようにする
+      else if (MODE === 'leave') { $('applyUser').textContent = userLine(); show('viewApply'); }
       else if (MODE === 'report') { showReport(); }
       else if (MODE === 'fix') { showFix(); }
       else if (MODE === 'apply') { $('applyUser').textContent = userLine(); show('viewApply'); }
