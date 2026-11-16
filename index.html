@@ -30,7 +30,7 @@
     .err { background: #fdecec; color: #b3312f; }
     .hidden { display: none; }
     label { font-size: 13px; color: #555; display: block; margin: 10px 0 4px; }
-    input[type=date], input[type=text] {
+    input[type=date], input[type=text], input[type=time] {
       width: 100%; padding: 12px; border: 1px solid #ccd4dc; border-radius: 8px; font-size: 16px;
     }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -50,6 +50,9 @@
     .segrow { display: flex; gap: 8px; }
     .seg { flex: 1; padding: 12px 0; border: 1px solid #ccd4dc; background: #fff; border-radius: 8px; font-size: 15px; cursor: pointer; color: #555; }
     .seg.segon { background: #3577e5; color: #fff; border-color: #3577e5; font-weight: bold; }
+    .orange { background: #e8860c; }
+    .midbtn { padding: 13px; font-size: 16px; }
+    a.miss { color: #e8860c; font-weight: bold; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -70,6 +73,7 @@
     <button class="bigbtn red" onclick="showPunch('out')">🔴 退勤</button>
     <button class="bigbtn blue" onclick="showLeave()">🏖 有休申請</button>
     <button class="bigbtn gray" onclick="showReport()">📋 出勤簿を見る</button>
+    <button class="bigbtn orange" onclick="showFix()">🕘 押し忘れの申請</button>
   </div>
 
   <div id="viewPunch" class="card hidden">
@@ -100,9 +104,30 @@
     <div class="status ok hidden" id="leaveResult"></div>
   </div>
 
+  <div id="viewFix" class="card hidden">
+    <h1>🕘 押し忘れの申請</h1>
+    <div class="sub" id="fixUser"></div>
+    <div class="status">出勤・退勤を押し忘れた日の時刻を申請してください。管理者が確認したら出勤簿に反映されます。</div>
+    <label>日付</label>
+    <input type="date" id="fixDate">
+    <label>押し忘れたのは</label>
+    <div class="segrow">
+      <button type="button" class="seg" data-fk="in" onclick="selFixKind('in')">出勤</button>
+      <button type="button" class="seg segon" data-fk="out" onclick="selFixKind('out')">退勤</button>
+    </div>
+    <label>本当の時刻</label>
+    <input type="time" id="fixTime">
+    <label>理由</label>
+    <input type="text" id="fixNote" placeholder="例: 帰ってから退勤を押し忘れたのに気づいた">
+    <div style="height:14px"></div>
+    <button class="bigbtn orange" id="fixBtn" onclick="doFix()">この内容で申請する</button>
+    <div class="status ok hidden" id="fixResult"></div>
+  </div>
+
   <div id="viewReport" class="card hidden">
     <h1>📋 出勤簿</h1>
     <div class="sub" id="reportUser"></div>
+    <button class="bigbtn orange midbtn" onclick="showFix()">🕘 押し忘れた日の申請はこちら</button>
     <div class="monthnav">
       <button onclick="moveMonth(-1)">◀ 前月</button>
       <span id="reportMonth"></span>
@@ -125,7 +150,7 @@
     var MODE = '';
     try {
       var qs = decodeURIComponent(window.location.search || '');
-      var mm = qs.match(/mode=(in|out|leave|report)/);
+      var mm = qs.match(/mode=(in|out|leave|report|fix)/);
       if (mm) MODE = mm[1];
     } catch (e) {}
 
@@ -134,6 +159,7 @@
     var punchMode = 'in';
     var submitted = false;
     var leaveType = 'full';
+    var fixKind = 'out';
 
     window.onerror = function (msg, src, line) {
       try { showError('JSエラー: ' + msg + ' (line ' + line + ')'); } catch (e) {}
@@ -141,7 +167,7 @@
 
     function $(id) { return document.getElementById(id); }
     function show(id) {
-      var ids = ['viewLoading', 'viewError', 'viewHome', 'viewPunch', 'viewLeave', 'viewReport'];
+      var ids = ['viewLoading', 'viewError', 'viewHome', 'viewPunch', 'viewLeave', 'viewFix', 'viewReport'];
       for (var i = 0; i < ids.length; i++) { $(ids[i]).classList.add('hidden'); }
       $(id).classList.remove('hidden');
     }
@@ -194,6 +220,7 @@
       if (MODE === 'in' || MODE === 'out') { showPunch(MODE); }
       else if (MODE === 'leave') { showLeave(); }
       else if (MODE === 'report') { showReport(); }
+      else if (MODE === 'fix') { showFix(); }
       else { $('homeUser').textContent = userLine(); show('viewHome'); }
     }
 
@@ -290,6 +317,46 @@
       });
     }
 
+    /* ---------- 押し忘れの申請 (管理者が承認したら反映) ---------- */
+    function selFixKind(k) {
+      fixKind = k;
+      var btns = document.querySelectorAll('#viewFix .seg');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('segon', btns[i].getAttribute('data-fk') === k);
+      }
+    }
+    function showFix(date, kind) {
+      $('fixUser').textContent = userLine();
+      var d = new Date();
+      $('fixDate').value = date || (d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2));
+      selFixKind(kind === 'in' ? 'in' : 'out');
+      $('fixTime').value = '';
+      $('fixNote').value = '';
+      $('fixResult').classList.add('hidden');
+      $('fixBtn').disabled = false;
+      show('viewFix');
+      window.scrollTo(0, 0);
+    }
+    function doFix() {
+      var date = $('fixDate').value, time = $('fixTime').value, note = $('fixNote').value.trim();
+      if (!date) { alert('日付を選択してください。'); return; }
+      if (!time) { alert('本当の時刻を入力してください。'); return; }
+      if (!note) { alert('理由を入力してください。'); return; }
+      $('fixBtn').disabled = true;
+      api({
+        action: 'fix', userId: profile.userId, displayName: profile.displayName,
+        date: date, kind: fixKind, time: time, note: note
+      }).then(function (res) {
+        if (!res || res.ok === false) throw new Error(res && res.message ? res.message : '申請できませんでした');
+        $('fixResult').textContent = '✅ ' + res.message;
+        $('fixResult').classList.remove('hidden');
+        setTimeout(function () { try { woff.closeWindow(); } catch (e) {} }, 2500);
+      }).catch(function (err) {
+        alert('申請できませんでした: ' + err.message);
+        $('fixBtn').disabled = false;
+      });
+    }
+
     /* ---------- 出勤簿 ---------- */
     function showReport() {
       $('reportUser').textContent = userLine();
@@ -321,12 +388,16 @@
       var html = '<table><tr><th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>時間</th></tr>';
       rep.rows.forEach(function (r) {
         var cls = r.leave ? 'leave' : (r.w === '土' ? 'sat' : (r.w === '日' ? 'sun' : ''));
-        var inText = r.leave ? (r.leaveType || '有休') : (r.in || '-');
+        // 片方だけ押してある日は「未打刻」を押すとその日の申請画面を開く
+        var ds = rep.ym + '-' + ('0' + r.d).slice(-2);
+        var miss = function (kind) { return '<a href="#" class="miss" onclick="showFix(\'' + ds + '\',\'' + kind + '\');return false">未打刻</a>'; };
+        var inText = r.leave ? (r.leaveType || '有休') : (r.in || (r.out ? miss('in') : '-'));
+        var outText = r.leave ? '-' : (r.out || (r.in ? miss('out') : '-'));
         html += '<tr class="' + cls + '">' +
           '<td>' + r.d + '</td><td>' + r.w + '</td>' +
-          '<td>' + inText + '</td><td>' + (r.leave ? '-' : (r.out || '-')) + '</td><td>' + (r.hours || '-') + '</td></tr>';
+          '<td>' + inText + '</td><td>' + outText + '</td><td>' + (r.hours || '-') + (r.fix ? ' ✎' : '') + '</td></tr>';
       });
-      html += '</table>';
+      html += '</table><div class="sub" style="margin-top:8px">「未打刻」を押すと、その日の押し忘れを申請できます。✎ = 申請で直した日</div>';
       $('reportBody').innerHTML = html;
     }
   </script>
