@@ -76,6 +76,14 @@
     <button class="bigbtn orange" onclick="showFix()">🕘 押し忘れの申請</button>
   </div>
 
+  <div id="viewApply" class="card hidden">
+    <h1>📝 申請</h1>
+    <div class="sub" id="applyUser"></div>
+    <button class="bigbtn blue" onclick="showLeave()">🏖 有休申請</button>
+    <button class="bigbtn orange" onclick="showFix()">🕘 押し忘れの申請</button>
+    <div class="sub">押し忘れの申請は、出勤・退勤を押し忘れた日の本当の時刻を送ります。管理者が確認したら出勤簿に反映されます。</div>
+  </div>
+
   <div id="viewPunch" class="card hidden">
     <h1 id="punchTitle">出勤打刻</h1>
     <div class="sub" id="punchUser"></div>
@@ -150,7 +158,7 @@
     var MODE = '';
     try {
       var qs = decodeURIComponent(window.location.search || '');
-      var mm = qs.match(/mode=(in|out|leave|report|fix)/);
+      var mm = qs.match(/mode=(in|out|leave|report|fix|apply)/);
       if (mm) MODE = mm[1];
     } catch (e) {}
 
@@ -167,7 +175,7 @@
 
     function $(id) { return document.getElementById(id); }
     function show(id) {
-      var ids = ['viewLoading', 'viewError', 'viewHome', 'viewPunch', 'viewLeave', 'viewFix', 'viewReport'];
+      var ids = ['viewLoading', 'viewError', 'viewHome', 'viewPunch', 'viewApply', 'viewLeave', 'viewFix', 'viewReport'];
       for (var i = 0; i < ids.length; i++) { $(ids[i]).classList.add('hidden'); }
       $(id).classList.remove('hidden');
     }
@@ -221,6 +229,7 @@
       else if (MODE === 'leave') { showLeave(); }
       else if (MODE === 'report') { showReport(); }
       else if (MODE === 'fix') { showFix(); }
+      else if (MODE === 'apply') { $('applyUser').textContent = userLine(); show('viewApply'); }
       else { $('homeUser').textContent = userLine(); show('viewHome'); }
     }
 
